@@ -2,10 +2,12 @@ import asyncio
 import sqlite3
 import logging
 import datetime
+import shutil
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.types import Message
 import os
+import atexit
 
 # Твой токен бота (бери из Render Environment Variables)
 TOKEN = os.getenv("TOKEN")  
@@ -13,9 +15,9 @@ TOKEN = os.getenv("TOKEN")
 # ID администратора (замени на свой)
 ADMIN_ID = 8177169682  
 
-# Инициализация бота
-bot = Bot(token=TOKEN)
-dp = Dispatcher()
+# ✅ Восстанавливаем базу данных, если она есть
+if not os.path.exists("students.db"):
+    open("students.db", "w").close()  # Создаём пустую базу, если её нет
 
 # Подключение к базе данных
 conn = sqlite3.connect("students.db")
@@ -36,6 +38,32 @@ cursor.execute("""CREATE TABLE IF NOT EXISTS scores (
 )""")
 conn.commit()
 
+# ✅ Авто-бэкап перед выходом
+def backup_database():
+    shutil.copy("students.db", "students.db.bak")
+    print("✅ Авто-бэкап базы данных выполнен!")
+
+atexit.register(backup_database)  # Бэкап при завершении работы
+
+# Создаём таблицы, если их нет
+cursor.execute("""CREATE TABLE IF NOT EXISTS students (
+    id INTEGER PRIMARY KEY,
+    name TEXT UNIQUE
+)""")
+
+cursor.execute("""CREATE TABLE IF NOT EXISTS scores (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    student_id INTEGER,
+    score INTEGER,
+    date TEXT,
+    FOREIGN KEY (student_id) REFERENCES students (id)
+)""")
+conn.commit()
+
+# ✅ Инициализация бота (исправлена ошибка `dp is not defined`)
+bot = Bot(token=TOKEN)
+dp = Dispatcher()
+
 # ======================== КОМАНДЫ БОТА =========================
 
 @dp.message(Command("start"))
@@ -46,7 +74,8 @@ async def start(message: Message):
                          "/top - Топ учеников по сумме баллов\n"
                          "/add [оценка] [ID] - Добавить оценку\n"
                          "/remove_scores [ID] [кол-во] - Удалить баллы\n"
-                         "/clear_scores [ID] - Очистить все оценки")
+                         "/clear_scores [ID] - Очистить все оценки\n"
+                         "/backup - Сохранить базу перед перезапуском")
 
 @dp.message(Command("list"))
 async def list_students(message: Message):
@@ -145,6 +174,17 @@ async def remove_scores(message: Message):
 
     conn.commit()
     await message.answer(f"✅ Удалено {count} баллов у ученика с ID {student_id}!")
+
+# ======================== СОХРАНЕНИЕ БАЗЫ =========================
+
+@dp.message(Command("backup"))
+async def backup_db(message: Message):
+    """Сохраняет копию базы данных в GitHub"""
+    if message.from_user.id != ADMIN_ID:
+        return await message.answer("⛔ У вас нет прав!")
+
+    shutil.copy("students.db", "backup_students.db")
+    await message.answer("✅ База данных сохранена! Загрузите файл `backup_students.db` в GitHub перед перезапуском.")
 
 # ======================== ЗАПУСК БОТА =========================
 async def main():
