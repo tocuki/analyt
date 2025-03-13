@@ -85,15 +85,15 @@ async def add_score(message: Message):
     else:
         await message.answer("⚠ Ошибка: Ученик с таким ID не найден!")
 
-@dp.message(Command("remove_score"))
-async def remove_score(message: Message):
-    """Удаляет последние оценки ученика (только админ)"""
+@dp.message(Command("remove_scores"))
+async def remove_scores(message: Message):
+    """Удаляет определённое количество оценок у ученика (только админ)"""
     if message.from_user.id != ADMIN_ID:
-        return await message.answer("⛔ У вас нет прав на удаление оценок!")
+        return await message.answer("⛔ У вас нет прав!")
 
     args = message.text.split()
     if len(args) < 3:
-        return await message.answer("⚠ Использование: /remove_score [ID ученика] [Количество оценок]\nПример: /remove_score 5 2")
+        return await message.answer("⚠ Использование: /remove_scores [ID ученика] [Количество баллов]\nПример: /remove_scores 5 2")
 
     try:
         student_id = int(args[1])
@@ -101,40 +101,37 @@ async def remove_score(message: Message):
     except ValueError:
         return await message.answer("⚠ Ошибка: ID и количество должны быть числами!")
 
-    cursor.execute("SELECT COUNT(*) FROM scores WHERE student_id = ?", (student_id,))
-    total_scores = cursor.fetchone()[0]
+    cursor.execute("SELECT id FROM scores WHERE student_id = ? ORDER BY id DESC LIMIT ?", (student_id, count))
+    scores_to_delete = cursor.fetchall()
 
-    if total_scores == 0:
-        return await message.answer("⚠ У этого ученика нет оценок!")
+    if not scores_to_delete:
+        return await message.answer("⚠ У этого ученика недостаточно оценок!")
 
-    count = min(count, total_scores)  # Убираем максимум возможных оценок
-    cursor.execute("DELETE FROM scores WHERE student_id = ? ORDER BY id DESC LIMIT ?", (student_id, count))
+    for score_id in scores_to_delete:
+        cursor.execute("DELETE FROM scores WHERE id = ?", (score_id[0],))
+
     conn.commit()
+    await message.answer(f"✅ Удалено {count} баллов у ученика с ID {student_id}!")
 
-    await message.answer(f"✅ Удалено {count} оценок у ученика с ID {student_id}!")
-
-@dp.message(Command("add_student"))
-async def add_student(message: Message):
-    """Добавляет нового ученика с выбором ID (только админ)"""
+@dp.message(Command("clear_scores"))
+async def clear_scores(message: Message):
+    """Полностью удаляет все оценки ученика (только админ)"""
     if message.from_user.id != ADMIN_ID:
-        return await message.answer("⛔ У вас нет прав на добавление учеников!")
+        return await message.answer("⛔ У вас нет прав на очистку оценок!")
 
-    args = message.text.split(maxsplit=2)
-    if len(args) < 3:
-        return await message.answer("⚠ Использование: /add_student [ID] [Имя ученика]\nПример: /add_student 10 Иван")
+    args = message.text.split()
+    if len(args) < 2:
+        return await message.answer("⚠ Использование: /clear_scores [ID ученика]\nПример: /clear_scores 5")
 
     try:
         student_id = int(args[1])
-        student_name = args[2].strip()
     except ValueError:
         return await message.answer("⚠ Ошибка: ID должен быть числом!")
 
-    try:
-        cursor.execute("INSERT INTO students (id, name) VALUES (?, ?)", (student_id, student_name))
-        conn.commit()
-        await message.answer(f"✅ Ученик **{student_name}** добавлен с ID **{student_id}**!")
-    except sqlite3.IntegrityError:
-        await message.answer("⚠ Такой ID уже занят или ученик уже есть в базе!")
+    cursor.execute("DELETE FROM scores WHERE student_id = ?", (student_id,))
+    conn.commit()
+
+    await message.answer(f"✅ Все оценки ученика с ID {student_id} были удалены!")
 
 @dp.message(Command("top"))
 async def ask_top_period(message: Message):
