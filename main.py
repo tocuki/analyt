@@ -43,9 +43,7 @@ async def start(message: Message):
     """Приветствие"""
     await message.answer("Привет! Я бот для учета оценок.\n\n📌 Доступные команды:\n"
                          "/list - Список учеников\n"
-                         "/top_week - Топ учеников за неделю\n"
-                         "/top_month - Топ учеников за месяц\n"
-                         "/top_alltime - Топ учеников за всё время\n"
+                         "/top - Топ учеников по сумме баллов\n"
                          "/add [оценка] [ID] - Добавить оценку\n"
                          "/remove_scores [ID] [кол-во] - Удалить баллы\n"
                          "/clear_scores [ID] - Очистить все оценки")
@@ -95,12 +93,13 @@ async def add_score(message: Message):
 
 # ======================== ТОП УЧЕНИКОВ =========================
 
-def get_top_students(period_filter):
-    """Функция для вывода топа учеников (учитывает только актуальные данные)"""
-    query = f"""
+@dp.message(Command("top"))
+async def top_students(message: Message):
+    """Выводит топ учеников по сумме всех оценок"""
+    query = """
     SELECT students.id, students.name, COALESCE(SUM(scores.score), 0) as total_score 
     FROM students 
-    LEFT JOIN scores ON students.id = scores.student_id AND {period_filter}
+    LEFT JOIN scores ON students.id = scores.student_id
     GROUP BY students.id 
     ORDER BY total_score DESC 
     LIMIT 10
@@ -110,25 +109,10 @@ def get_top_students(period_filter):
     top_students = cursor.fetchall()
 
     if not top_students:
-        return "⚠ В этом периоде нет данных для топа!"
+        return await message.answer("⚠ В этом периоде нет данных для топа!")
 
     result = [f"{i+1}. {name} – {total_score} баллов" for i, (student_id, name, total_score) in enumerate(top_students)]
-    return "🏆 Топ учеников:\n" + "\n".join(result)
-
-@dp.message(Command("top_week"))
-async def top_week(message: Message):
-    """Топ учеников за неделю"""
-    await message.answer(get_top_students("scores.date >= date('now', '-7 days')"))
-
-@dp.message(Command("top_month"))
-async def top_month(message: Message):
-    """Топ учеников за месяц"""
-    await message.answer(get_top_students("scores.date >= date('now', '-1 month')"))
-
-@dp.message(Command("top_alltime"))
-async def top_alltime(message: Message):
-    """Топ учеников за всё время"""
-    await message.answer(get_top_students("1=1"))
+    await message.answer("🏆 Топ учеников по сумме всех оценок:\n" + "\n".join(result))
 
 # ======================== УДАЛЕНИЕ БАЛЛОВ =========================
 
