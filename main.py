@@ -45,10 +45,7 @@ async def start(message: Message):
                          "/list - Список учеников\n"
                          "/top_week - Топ учеников за неделю\n"
                          "/top_month - Топ учеников за месяц\n"
-                         "/top_alltime - Топ учеников за всё время\n"
-                         "/add [оценка] [ID] - Добавить оценку\n"
-                         "/remove_scores [ID] [кол-во] - Удалить баллы\n"
-                         "/clear_scores [ID] - Очистить все оценки")
+                         "/top_alltime - Топ учеников за всё время\n")
 
 @dp.message(Command("list"))
 async def list_students(message: Message):
@@ -135,6 +132,38 @@ async def top_month(message: Message):
 async def top_alltime(message: Message):
     """Топ учеников за всё время"""
     await message.answer(get_top_students("1=1"))
+
+# ======================== УДАЛЕНИЕ БАЛЛОВ =========================
+
+@dp.message(Command("remove_scores"))
+async def remove_scores(message: Message):
+    """Удаляет определённое количество баллов у ученика (только админ)"""
+    if message.from_user.id != ADMIN_ID:
+        return await message.answer("⛔ У вас нет прав!")
+
+    args = message.text.split()
+    if len(args) < 3:
+        return await message.answer("⚠ Использование: /remove_scores [ID ученика] [Количество баллов]\nПример: /remove_scores 5 2")
+
+    try:
+        student_id = int(args[1])
+        count = int(args[2])
+    except ValueError:
+        return await message.answer("⚠ Ошибка: ID и количество должны быть числами!")
+
+    # Получаем ID последних оценок ученика
+    cursor.execute("SELECT id FROM scores WHERE student_id = ? ORDER BY id DESC LIMIT ?", (student_id, count))
+    scores_to_delete = cursor.fetchall()
+
+    if not scores_to_delete:
+        return await message.answer("⚠ У этого ученика недостаточно баллов!")
+
+    # Удаляем нужное количество оценок
+    for score_id in scores_to_delete:
+        cursor.execute("DELETE FROM scores WHERE id = ?", (score_id[0],))
+
+    conn.commit()
+    await message.answer(f"✅ Удалено {count} баллов у ученика с ID {student_id}!")
 
 # ======================== ЗАПУСК БОТА =========================
 async def main():
