@@ -5,9 +5,10 @@ import datetime
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
+import os
 
 # Твой токен бота
-TOKEN = "7308160665:AAFjQ2st_AbQKNekJGVNyVj-iG8ymTgIWVs"
+TOKEN = os.getenv("TOKEN")  # Теперь Render сам подтянет токен из ENV переменной
 
 # ID администратора (замени на свой)
 ADMIN_ID = 8177169682  
@@ -133,18 +134,41 @@ async def clear_scores(message: Message):
 
     await message.answer(f"✅ Все оценки ученика с ID {student_id} были удалены!")
 
-@dp.message(Command("top"))
-async def ask_top_period(message: Message):
-    """Запрашивает у пользователя, за какой период показать топ"""
-    keyboard = ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="Топ за неделю"), KeyboardButton(text="Топ за месяц")],
-            [KeyboardButton(text="Топ за все время")]
-        ],
-        resize_keyboard=True
-    )
+@dp.message(F.text.in_(["Топ за неделю", "Топ за месяц", "Топ за все время"]))
+async def top_students(message: Message):
+    """Выводит топ учеников за выбранный период"""
+    period_map = {
+        "Топ за неделю": "date >= date('now', '-7 days')",
+        "Топ за месяц": "date >= date('now', '-1 month')",
+        "Топ за все время": "1=1"
+    }
     
-    await message.answer("Выберите период:", reply_markup=keyboard)
+    period = message.text
+    date_filter = period_map.get(period, "1=1")
+
+    query = f"""
+    SELECT student_id, AVG(score) as avg_score 
+    FROM scores 
+    WHERE {date_filter} 
+    GROUP BY student_id 
+    HAVING COUNT(score) > 0
+    ORDER BY avg_score DESC 
+    LIMIT 10
+    """
+    
+    cursor.execute(query)
+    top_students = cursor.fetchall()
+
+    if not top_students:
+        return await message.answer("⚠ В этом периоде нет данных для топа!")
+
+    result = []
+    for i, (student_id, avg_score) in enumerate(top_students, start=1):
+        cursor.execute("SELECT name FROM students WHERE id = ?", (student_id,))
+        student_name = cursor.fetchone()[0]
+        result.append(f"{i}. {student_name} - {round(avg_score, 2)}")
+
+    await message.answer(f"🏆 {period}:\n" + "\n".join(result))
 
 # ======================== ЗАПУСК БОТА =========================
 async def main():
