@@ -45,7 +45,10 @@ async def start(message: Message):
                          "/list - Список учеников\n"
                          "/top_week - Топ учеников за неделю\n"
                          "/top_month - Топ учеников за месяц\n"
-                         "/top_alltime - Топ учеников за всё время\n")
+                         "/top_alltime - Топ учеников за всё время\n"
+                         "/add [оценка] [ID] - Добавить оценку\n"
+                         "/remove_scores [ID] [кол-во] - Удалить баллы\n"
+                         "/clear_scores [ID] - Очистить все оценки")
 
 @dp.message(Command("list"))
 async def list_students(message: Message):
@@ -93,13 +96,12 @@ async def add_score(message: Message):
 # ======================== ТОП УЧЕНИКОВ =========================
 
 def get_top_students(period_filter):
-    """Функция для вывода топа учеников"""
+    """Функция для вывода топа учеников (учитывает только актуальные данные)"""
     query = f"""
-    SELECT student_id, SUM(score) as total_score 
-    FROM scores 
-    WHERE {period_filter} 
-    GROUP BY student_id 
-    HAVING COUNT(score) > 0
+    SELECT students.id, students.name, COALESCE(SUM(scores.score), 0) as total_score 
+    FROM students 
+    LEFT JOIN scores ON students.id = scores.student_id AND {period_filter}
+    GROUP BY students.id 
     ORDER BY total_score DESC 
     LIMIT 10
     """
@@ -110,23 +112,18 @@ def get_top_students(period_filter):
     if not top_students:
         return "⚠ В этом периоде нет данных для топа!"
 
-    result = []
-    for i, (student_id, total_score) in enumerate(top_students, start=1):
-        cursor.execute("SELECT name FROM students WHERE id = ?", (student_id,))
-        student_name = cursor.fetchone()[0]
-        result.append(f"{i}. {student_name} – {total_score} баллов")
-
+    result = [f"{i+1}. {name} – {total_score} баллов" for i, (student_id, name, total_score) in enumerate(top_students)]
     return "🏆 Топ учеников:\n" + "\n".join(result)
 
 @dp.message(Command("top_week"))
 async def top_week(message: Message):
     """Топ учеников за неделю"""
-    await message.answer(get_top_students("date >= date('now', '-7 days')"))
+    await message.answer(get_top_students("scores.date >= date('now', '-7 days')"))
 
 @dp.message(Command("top_month"))
 async def top_month(message: Message):
     """Топ учеников за месяц"""
-    await message.answer(get_top_students("date >= date('now', '-1 month')"))
+    await message.answer(get_top_students("scores.date >= date('now', '-1 month')"))
 
 @dp.message(Command("top_alltime"))
 async def top_alltime(message: Message):
@@ -152,7 +149,7 @@ async def remove_scores(message: Message):
         return await message.answer("⚠ Ошибка: ID и количество должны быть числами!")
 
     # Получаем ID последних оценок ученика
-    cursor.execute("SELECT id FROM scores WHERE student_id = ? ORDER BY id DESC LIMIT ?", (student_id, count))
+    cursor.execute("SELECT id FROM scores WHERE student_id = ? ORDER BY id ASC LIMIT ?", (student_id, count))
     scores_to_delete = cursor.fetchall()
 
     if not scores_to_delete:
